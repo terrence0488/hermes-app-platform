@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+# Real configs hold deployment values. Only the examples belong in git.
+app_platform.json
+gatekeeper.json
+router.json
+team.txt
+# Build output
+/router/hermes-app-router
+/dist/

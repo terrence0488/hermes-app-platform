@@ -1,0 +1,18 @@
+{
+  "domain": "example.com",
+  "agent_user": "agent-user",
+  "requester_user": "hermes-user",
+  "registry_group": "hermes-app-router",
+  "result_group": "hermes-user",
+  "reserved_names": ["hermes", "browser", "www"],
+  "port_min": 3000,
+  "port_max": 3999,
+  "max_apps": 20,
+  "max_guests_per_app": 50,
+  "max_emails_per_request": 20,
+  "inbox_dir": "/srv/hermes-apps/inbox/new",
+  "result_dir": "/srv/hermes-apps/results",
+  "registry_dir": "/var/lib/hermes-apps/registry",
+  "result_keep_seconds": 3600,
+  "max_results": 500
+}

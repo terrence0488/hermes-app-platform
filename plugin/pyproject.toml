@@ -1,0 +1,10 @@
+# The plugin uses the Python standard library only, so there is nothing to bound or to
+# install. Keep this file free of [build-system], optional dependencies and dependency groups:
+# any of them makes Hermes ask for dependency consent and prepare a new environment.
+[project]
+name = "hermes-app-platform-plugin"
+version = "0.1.0"
+description = "Hermes plugin for the app platform: publish apps and manage guests"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = []

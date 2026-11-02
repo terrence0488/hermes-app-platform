@@ -1,0 +1,38 @@
+{
+  "_comment": "Shared by the plugin, gatekeeper and router tests, so all three normalise addresses the same way.",
+  "valid": {
+    "alice@gmail.com": "alice@gmail.com",
+    "Alice@GMail.COM": "alice@gmail.com",
+    "first.last+tag@sub.example.co.uk": "first.last+tag@sub.example.co.uk",
+    "a_b%c-d@xn--bcher-kva.example": "a_b%c-d@xn--bcher-kva.example"
+  },
+  "invalid": [
+    "",
+    " alice@gmail.com",
+    "alice@gmail.com ",
+    "alice@gmail.com\n",
+    "alice",
+    "@gmail.com",
+    "alice@",
+    "alice@gmail",
+    ".alice@gmail.com",
+    "alice.@gmail.com",
+    "al..ice@gmail.com",
+    "alice@-gmail.com",
+    "alice@gmail-.com",
+    "alice@gmail..com",
+    "alice@gmail.c",
+    "alice@gmail.123",
+    "a b@gmail.com",
+    "\"a b\"@gmail.com",
+    "alice@gmail.com,bob@gmail.com",
+    "alice@gmail.com;bob@gmail.com",
+    "Alice <alice@gmail.com>",
+    "alice@@gmail.com",
+    "<script>@gmail.com",
+    "alicе@gmail.com",
+    "aliceK@gmail.com",
+    "alice@gmаil.com",
+    "alice\u0000@gmail.com"
+  ]
+}

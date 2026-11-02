@@ -1,0 +1,453 @@
+#!/usr/bin/python3 -I
+"""Root gatekeeper for the Hermes app platform.
+
+hermes-user can only drop request files into an inbox. This script validates each request and is
+the only writer of the app registry, which the router reads. It never edits the tunnel: one
+wildcard route sends every app hostname to the router. Requests come from a less trusted user, so
+every field is checked here, even though the plugin has already checked it.
+
+Deployment values live in /etc/hermes-apps/gatekeeper.json.
+"""
+
+import argparse
+import fcntl
+import grp
+import json
+import logging
+import os
+import pwd
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+CONFIG_PATH = "/etc/hermes-apps/gatekeeper.json"
+LOCK_PATH = "/run/hermes-apps/gatekeeper.lock"
+MAX_REQUEST_BYTES = 8192
+MAX_REQUESTS_PER_RUN = 50  # the path unit fires again while the inbox is not empty
+MAX_EMAIL_CHARS = 254
+NAME_RE = re.compile(r"[a-z][a-z0-9-]{1,30}")
+REQUEST_FILE_RE = re.compile(r"([0-9a-f]{32})\.json")
+REQUESTER_RE = re.compile(r"[a-z0-9_.-]{1,32}:[A-Za-z0-9_.@:+=-]{1,128}")
+DOMAIN_RE = re.compile(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+")
+EMAIL_RE = re.compile(
+    r"[a-z0-9_%+-]+(\.[a-z0-9_%+-]+)*"
+    r"@([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])")
+ACTION_FIELDS = {
+    "publish": {"name", "port"},
+    "unpublish": {"name"},
+    "grant": {"name", "emails"},
+    "revoke": {"name", "emails"},
+    "list": set(),
+}
+BASE_FIELDS = {"id", "action", "requested_by"}
+ENTRY_FIELDS = {"name", "port", "created_by", "created_at", "guests"}
+
+log = logging.getLogger("hermes-app-gatekeeper")
+
+
+class Rejected(Exception):
+    """A request failed validation. The message is safe to return and never repeats its input."""
+
+
+class Settings:
+    def __init__(self, path=CONFIG_PATH):
+        with open(path, encoding="utf-8") as f:
+            raw = json.load(f)
+        self.domain = raw["domain"]
+        if not isinstance(self.domain, str) or not DOMAIN_RE.fullmatch(self.domain):
+            raise ValueError("domain must be a lower-case hostname with at least two labels")
+        self.agent_user = raw["agent_user"]
+        self.requester_user = raw["requester_user"]
+        self.registry_group = raw["registry_group"]
+        self.result_group = raw["result_group"]
+        self.port_min = raw.get("port_min", 3000)
+        self.port_max = raw.get("port_max", 3999)
+        self.max_apps = raw.get("max_apps", 20)
+        self.max_guests_per_app = raw.get("max_guests_per_app", 50)
+        self.max_emails_per_request = raw.get("max_emails_per_request", 20)
+        self.reserved = frozenset(raw["reserved_names"])
+        if not self.reserved:
+            raise ValueError("reserved_names must list the hostnames with fixed tunnel routes")
+        self.inbox_dir = Path(raw.get("inbox_dir", "/srv/hermes-apps/inbox/new"))
+        self.result_dir = Path(raw.get("result_dir", "/srv/hermes-apps/results"))
+        self.registry_dir = Path(raw.get("registry_dir", "/var/lib/hermes-apps/registry"))
+        self.result_keep_seconds = raw.get("result_keep_seconds", 3600)
+        self.max_results = raw.get("max_results", 500)
+
+    @property
+    def requester_uid(self):
+        return pwd.getpwnam(self.requester_user).pw_uid
+
+    @property
+    def agent_uid(self):
+        return pwd.getpwnam(self.agent_user).pw_uid
+
+    @property
+    def registry_gid(self):
+        return grp.getgrnam(self.registry_group).gr_gid
+
+    @property
+    def result_gid(self):
+        return grp.getgrnam(self.result_group).gr_gid
+
+
+def _reject_duplicate_keys(pairs):
+    # A duplicate key could make two readers disagree about the same request.
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate key")
+        result[key] = value
+    return result
+
+
+def read_request(directory_fd, filename, requester_uid):
+    """Read one request without following links or blocking on a FIFO, from a folder hermes-user owns."""
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+    try:
+        fd = os.open(filename, flags, dir_fd=directory_fd)
+    except OSError:
+        raise Rejected("request must be a regular file") from None
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise Rejected("request must be a regular file")
+        if info.st_uid != requester_uid:
+            raise Rejected("request is not owned by the requesting user")
+        if info.st_size > MAX_REQUEST_BYTES:
+            raise Rejected(f"request is larger than {MAX_REQUEST_BYTES} bytes")
+        data = os.read(fd, MAX_REQUEST_BYTES + 1)
+    finally:
+        os.close(fd)
+    if len(data) > MAX_REQUEST_BYTES:
+        raise Rejected(f"request is larger than {MAX_REQUEST_BYTES} bytes")
+    try:
+        request = json.loads(data.decode("utf-8"), object_pairs_hook=_reject_duplicate_keys)
+    except (ValueError, RecursionError):
+        raise Rejected("request is not valid JSON") from None
+    if not isinstance(request, dict):
+        raise Rejected("request must be a JSON object")
+    return request
+
+
+def validate_name(name, settings):
+    if not isinstance(name, str) or not NAME_RE.fullmatch(name):
+        raise Rejected("name must match ^[a-z][a-z0-9-]{1,30}$")
+    if name.endswith("-") or "--" in name:
+        raise Rejected("name must not end with a hyphen or contain two in a row")
+    if name in settings.reserved:
+        raise Rejected(f"'{name}' is a reserved name")
+    return name
+
+
+def validate_port(port, settings):
+    if isinstance(port, bool) or not isinstance(port, int):
+        raise Rejected("port must be an integer")
+    if not settings.port_min <= port <= settings.port_max:
+        raise Rejected(f"port must be between {settings.port_min} and {settings.port_max}")
+    return port
+
+
+def normalize_email(value):
+    """The one normalisation: ASCII only, lower-cased. The router applies the same rule."""
+    if not isinstance(value, str) or not value.isascii() or len(value) > MAX_EMAIL_CHARS:
+        raise ValueError("not a valid address")
+    lowered = value.lower()
+    if not EMAIL_RE.fullmatch(lowered):
+        raise ValueError("not a valid address")
+    return lowered
+
+
+def validate_emails(emails, settings):
+    if not isinstance(emails, list) or not emails:
+        raise Rejected("emails must be a non-empty list")
+    if len(emails) > settings.max_emails_per_request:
+        raise Rejected(f"at most {settings.max_emails_per_request} emails per request")
+    cleaned = []
+    for position, value in enumerate(emails, 1):
+        try:
+            address = normalize_email(value)
+        except ValueError:
+            raise Rejected(f"email number {position} is not a valid address") from None
+        if address not in cleaned:
+            cleaned.append(address)
+    return cleaned
+
+
+def validate_requester(value):
+    if not isinstance(value, str) or not REQUESTER_RE.fullmatch(value):
+        raise Rejected("requested_by is missing or invalid")
+    return value
+
+
+def listeners_on(port):
+    """Return (local_address, pid list) for each TCP listener on the port, using root's view of the host."""
+    result = subprocess.run(["ss", "-tlnpH", f"sport = :{port}"], capture_output=True, text=True, timeout=10, check=True)
+    found = []
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 4:
+            continue
+        found.append((fields[3], [int(pid) for pid in re.findall(r"pid=(\d+)", line)]))
+    return found
+
+
+def check_listener(port, settings):
+    """The port must be bound to exactly 127.0.0.1, and only by processes the agent user owns."""
+    try:
+        found = listeners_on(port)
+    except (OSError, subprocess.SubprocessError):
+        log.exception("could not list listeners")
+        raise Rejected(f"could not check what is listening on port {port}") from None
+    if not found:
+        raise Rejected(f"nothing is listening on 127.0.0.1:{port}")
+    agent_uid = settings.agent_uid
+    for address, pids in found:
+        if address != f"127.0.0.1:{port}":
+            raise Rejected(f"port {port} must be bound to 127.0.0.1 only, found {address}")
+        if not pids:
+            raise Rejected(f"could not identify the process listening on port {port}")
+        for pid in pids:
+            try:
+                owner = os.stat(f"/proc/{pid}").st_uid
+            except OSError:
+                raise Rejected(f"could not identify the process listening on port {port}") from None
+            if owner != agent_uid:
+                raise Rejected(f"port {port} is not owned by {settings.agent_user}")
+
+
+def valid_entry(record, name, settings):
+    if not isinstance(record, dict) or set(record) != ENTRY_FIELDS or record["name"] != name:
+        return False
+    port, guests = record["port"], record["guests"]
+    if isinstance(port, bool) or not isinstance(port, int) or not settings.port_min <= port <= settings.port_max:
+        return False
+    if not isinstance(guests, list) or not isinstance(record["created_by"], str):
+        return False
+    try:
+        return all(normalize_email(guest) == guest for guest in guests)
+    except ValueError:
+        return False
+
+
+def load_registry(settings):
+    """Refuse to act on a damaged registry: a port or guest it hides could otherwise be handed out again."""
+    apps = {}
+    for path in sorted(settings.registry_dir.glob("*.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            record = None
+        if not valid_entry(record, path.stem, settings):
+            log.critical("registry entry %s is damaged", path.name)
+            raise Rejected("the app registry is damaged; ask the owner to check it")
+        apps[path.stem] = record
+    return apps
+
+
+def atomic_write(path, text, mode, uid=0, gid=0):
+    path = Path(path)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chown(tmp, uid, gid)
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+def write_entry(record, settings):
+    text = json.dumps(record, indent=2) + "\n"
+    atomic_write(settings.registry_dir / f"{record['name']}.json", text, 0o640, gid=settings.registry_gid)
+
+
+def write_result(settings, request_id, status, **fields):
+    body = {"id": request_id, "status": status, "at": _now(), **fields}
+    atomic_write(settings.result_dir / f"{request_id}.json", json.dumps(body) + "\n", 0o640, gid=settings.result_gid)
+
+
+def _now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _url(name, settings):
+    return f"https://{name}.{settings.domain}"
+
+
+def publish(request, settings):
+    name = validate_name(request.get("name"), settings)
+    port = validate_port(request.get("port"), settings)
+    apps = load_registry(settings)
+    current = apps.get(name)
+    for other, record in apps.items():
+        if other != name and record["port"] == port:
+            raise Rejected(f"port {port} is already published as '{other}'")
+    if current is None and len(apps) >= settings.max_apps:
+        raise Rejected(f"the limit of {settings.max_apps} published apps has been reached")
+    # Publishing needs no approval, so moving an app its guests can open would show them whatever
+    # now runs on that port, without anyone approving that.
+    if current is not None and current["port"] != port and current["guests"]:
+        raise Rejected(f"'{name}' has guests, so its port cannot change. Unpublish it, publish again, "
+                       "then add the guests again.")
+    check_listener(port, settings)
+    if current is not None and current["port"] == port:
+        return {"url": _url(name, settings), "port": port, "changed": False}
+    if current is not None:
+        record = {**current, "port": port}
+    else:
+        record = {"name": name, "port": port, "created_by": validate_requester(request["requested_by"]),
+                  "created_at": _now(), "guests": []}
+    write_entry(record, settings)
+    return {"url": _url(name, settings), "port": port, "changed": True}
+
+
+def unpublish(request, settings):
+    name = validate_name(request.get("name"), settings)
+    if name not in load_registry(settings):
+        raise Rejected(f"'{name}' is not published")
+    (settings.registry_dir / f"{name}.json").unlink()
+    return {"name": name}
+
+
+def grant(request, settings):
+    name = validate_name(request.get("name"), settings)
+    emails = validate_emails(request.get("emails"), settings)
+    record = load_registry(settings).get(name)
+    if record is None:
+        raise Rejected(f"'{name}' is not published")
+    added = [address for address in emails if address not in record["guests"]]
+    already = [address for address in emails if address in record["guests"]]
+    if len(record["guests"]) + len(added) > settings.max_guests_per_app:
+        raise Rejected(f"an app can have at most {settings.max_guests_per_app} guests")
+    if added:
+        record["guests"] = sorted(record["guests"] + added)
+        write_entry(record, settings)
+    return {"name": name, "url": _url(name, settings), "added": added, "already": already}
+
+
+def revoke(request, settings):
+    name = validate_name(request.get("name"), settings)
+    emails = validate_emails(request.get("emails"), settings)
+    record = load_registry(settings).get(name)
+    if record is None:
+        raise Rejected(f"'{name}' is not published")
+    removed = [address for address in emails if address in record["guests"]]
+    not_found = [address for address in emails if address not in record["guests"]]
+    if removed:
+        record["guests"] = [guest for guest in record["guests"] if guest not in removed]
+        write_entry(record, settings)
+    return {"name": name, "removed": removed, "not_found": not_found}
+
+
+def list_apps(request, settings):
+    apps = load_registry(settings)
+    return {"apps": [{**apps[name], "url": _url(name, settings)} for name in sorted(apps)]}
+
+
+HANDLERS = {"publish": publish, "unpublish": unpublish, "grant": grant, "revoke": revoke, "list": list_apps}
+
+
+def run_request(request_id, directory_fd, filename, settings):
+    request = read_request(directory_fd, filename, settings.requester_uid)
+    if request.get("id") != request_id:
+        raise Rejected("the id in the request must match the filename")
+    action = request.get("action")
+    if not isinstance(action, str) or action not in ACTION_FIELDS:
+        raise Rejected("action must be one of publish, unpublish, grant, revoke, list")
+    if set(request) != BASE_FIELDS | ACTION_FIELDS[action]:
+        raise Rejected(f"wrong fields for action '{action}'")
+    requester = validate_requester(request.get("requested_by"))
+    outcome = HANDLERS[action](request, settings)
+    if action != "list":
+        log.info("%s by %s: %s", action, requester, json.dumps(outcome, sort_keys=True))
+    return outcome
+
+
+def handle(filename, directory_fd, settings):
+    match = REQUEST_FILE_RE.fullmatch(filename)
+    if not match:
+        log.warning("discarded a request with an invalid filename")
+        return
+    request_id = match.group(1)
+    try:
+        outcome = run_request(request_id, directory_fd, filename, settings)
+        write_result(settings, request_id, "ok", **outcome)
+    except Rejected as exc:
+        log.info("rejected request %s: %s", request_id, exc)
+        write_result(settings, request_id, "error", reason=str(exc))
+
+
+def process_requests(settings):
+    directory_fd = os.open(settings.inbox_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        for filename in sorted(os.listdir(directory_fd))[:MAX_REQUESTS_PER_RUN]:
+            try:
+                handle(filename, directory_fd, settings)
+            except Exception:
+                log.exception("unexpected error while handling a request")
+                match = REQUEST_FILE_RE.fullmatch(filename)
+                if match:
+                    write_result(settings, match.group(1), "error", reason="internal error")
+            finally:
+                _remove(directory_fd, filename)
+    finally:
+        os.close(directory_fd)
+    prune_results(settings)
+
+
+def _remove(directory_fd, filename):
+    # A request can be a directory, and the path unit keeps firing until the folder is empty.
+    try:
+        if stat.S_ISDIR(os.lstat(filename, dir_fd=directory_fd).st_mode):
+            shutil.rmtree(filename, dir_fd=directory_fd)  # fd-based, so it does not follow links out
+        else:
+            os.unlink(filename, dir_fd=directory_fd)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        log.exception("could not remove a request")
+
+
+def prune_results(settings):
+    """Results are only read once, by the plugin, soon after the request. Keep the folder small."""
+    now = time.time()
+    entries = sorted(settings.result_dir.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
+    for position, path in enumerate(entries):
+        if position >= settings.max_results or now - path.stat().st_mtime > settings.result_keep_seconds:
+            path.unlink(missing_ok=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--config", default=CONFIG_PATH)
+    parser.add_argument("--check-config", action="store_true", help="load the config and the registry, change nothing")
+    args = parser.parse_args()
+    if os.geteuid() != 0:
+        sys.exit("hermes-app-gatekeeper must run as root")
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    settings = Settings(args.config)
+    for lookup in (settings.requester_uid, settings.agent_uid, settings.registry_gid, settings.result_gid):
+        assert lookup is not None  # a missing user or group raises KeyError here, at the start
+    if args.check_config:
+        print(f"config ok; {len(load_registry(settings))} apps in the registry")
+        return 0
+    with open(LOCK_PATH, "w", encoding="utf-8") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        process_requests(settings)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

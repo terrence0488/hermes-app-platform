@@ -1,0 +1,47 @@
+[Unit]
+Description=Hermes app platform access router
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hermes-app-router
+Group=hermes-app-router
+ExecStartPre=/usr/local/bin/hermes-app-router -config /etc/hermes-apps/router.json -check
+ExecStart=/usr/local/bin/hermes-app-router -config /etc/hermes-apps/router.json
+Restart=always
+RestartSec=5
+
+# It reads two root-owned places, connects to loopback apps, and fetches Cloudflare's public keys.
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+MemoryMax=256M
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

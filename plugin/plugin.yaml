@@ -1,0 +1,18 @@
+name: app_platform
+version: 0.1.0
+manifest_version: 2
+api_version: 1
+description: Lets a team publish AI-built apps and add guests by email, behind Cloudflare Access, a root gatekeeper and an access router.
+license: MIT
+homepage: https://github.com/terrence0488/hermes-app-platform
+requires_hermes: ">=0.22.5"
+tags: [apps, hosting, access]
+provides_tools:
+  - app_publish
+  - app_unpublish
+  - app_list
+  - app_grant
+  - app_revoke
+provides_hooks:
+  - pre_tool_call
+  - post_approval_response

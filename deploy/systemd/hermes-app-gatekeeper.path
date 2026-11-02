@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch for Hermes app platform requests
+
+[Path]
+DirectoryNotEmpty=/srv/hermes-apps/inbox/new
+MakeDirectory=no
+Unit=hermes-app-gatekeeper.service
+
+[Install]
+WantedBy=paths.target

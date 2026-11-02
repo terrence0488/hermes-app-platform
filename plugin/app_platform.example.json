@@ -1,0 +1,7 @@
+{
+  "inbox_dir": "/srv/hermes-apps/inbox",
+  "result_dir": "/srv/hermes-apps/results",
+  "allowed_platforms": ["telegram"],
+  "notify_target": "telegram:REPLACE_ME_OWNER_CHAT_ID",
+  "result_timeout_seconds": 15
+}

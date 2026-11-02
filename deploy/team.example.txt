@@ -1,0 +1,4 @@
+# One email address per line. Team members can open every published app.
+# There is no domain rule: everyone is listed by hand. Lines that aren't addresses are ignored and logged.
+# Keep this file root-owned, and not writable by group or others, or the router refuses all requests.
+REPLACE_ME_OWNER@example.com

@@ -1,0 +1,11 @@
+{
+  "listen": "127.0.0.1:8790",
+  "domain": "REPLACE_ME_DOMAIN",
+  "team_domain": "REPLACE_ME_TEAM.cloudflareaccess.com",
+  "aud": "REPLACE_ME_WILDCARD_APP_AUD",
+  "team_file": "/etc/hermes-apps/team.txt",
+  "registry_dir": "/var/lib/hermes-apps/registry",
+  "port_min": 3000,
+  "port_max": 3999,
+  "recheck_seconds": 30
+}
