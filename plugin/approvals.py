@@ -1,7 +1,7 @@
 """Proof that a person approved one exact grant.
 
 Hermes skips the approval prompt, and reports approved, when YOLO or ``approvals.mode: off`` is on,
-and it runs a tool anyway if a hook raises. So the handler doesn't rely on having been reached.
+and it runs a tool anyway if hook dispatch itself fails. So the handler doesn't rely on having been reached.
 The hook opens a ticket for the exact sender, app and addresses. Hermes's observer hook marks the
 ticket only when a person answers its prompt with an approval. The handler spends one marked ticket.
 """

@@ -140,7 +140,7 @@ Also confirm `agent-user` can't connect to the router's port, if you use a loopb
 ### 5. Install the plugin
 
 ```bash
-sudo -iu hermes-user hermes plugins install terrence0488/hermes-app-platform/plugin --ref <commit>
+sudo -iu hermes-user hermes plugins install "https://github.com/terrence0488/hermes-app-platform#plugin" --ref <commit>
 ```
 
 Create `~hermes-user/.hermes/app_platform.json` from `plugin/app_platform.example.json`, with `notify_target` set to the owner's
@@ -191,10 +191,10 @@ To back out, restore the Access policy first.
 
 ## Verify after install
 
-Run the real-Hermes test. **It has not been run yet: see [What has not been tested](#what-has-not-been-tested).**
+Run the real-Hermes test as `hermes-user`, from a clone outside `plugin/`. It uses a throwaway Hermes home and sends nothing:
 
 ```bash
-cd ~/.hermes/hermes-agent && APP_PLATFORM_REAL_HERMES=1 <hermes-venv>/bin/python -m unittest discover -s <repo>/tests -p 'test_hermes_integration.py'
+APP_PLATFORM_REAL_HERMES=1 PYTHONDONTWRITEBYTECODE=1 hermes --run-module unittest discover -v -s <repo>/tests -p 'test_hermes_integration.py'
 ```
 
 Then in chat:
@@ -250,7 +250,7 @@ To add a teammate, edit `team.txt`. To remove one, edit it again: open connectio
   stand in for a session.
 - Shows the exact app and addresses in the approval prompt. If they would not fit in full, or Hermes's secret redaction would mask part of an address, the call is refused rather than shown altered.
 - **Requires proof a person approved.** Hermes skips its prompt and reports approved when YOLO or `approvals.mode: off` is on, and runs
-  a tool anyway if a hook raises. So the hook opens a ticket for the exact sender, app and addresses; Hermes's `post_approval_response` observer marks
+  a tool anyway if hook dispatch itself fails. So the hook opens a ticket for the exact sender, app and addresses; Hermes's `post_approval_response` observer marks
   it only for `once`, `session` or `always`; the handler spends one marked ticket. Denied, timed out, skipped or rewritten arguments all
   mean nobody is added. Each rule key is used once, so an "always" answer can't cover a later grant.
 - Writes only to an inbox that `agent-user` can't reach.
@@ -276,27 +276,32 @@ To add a teammate, edit `team.txt`. To remove one, edit it again: open connectio
 - **A compromised `hermes-user` can do anything a teammate can through this platform,** including `grant` directly to the inbox: the approval is enforced
   in the plugin, inside that user's process. The owner notice would also be skipped. It can't touch the registry except through these checked requests, and it can't change the team.
   The gatekeeper logs each change, with the claimed sender, to the journal.
-- **The notice is best effort.** If it fails, the grant stands, the tool result says `owner_notified: false`, and the failure is logged.
+- **The notice is best effort.** It calls the same function as `hermes send`, in the gateway's process: `send_message` is deliberately not a registered Hermes tool, and starting `hermes send` for each grant would add a slow process start and more to go wrong, with the same result. If it fails, the grant stands, the tool result says `owner_notified: false`, and the failure is logged. Hermes also copies the notice into the owner's session, including the sender's cleaned display name.
 - **Requests apply in arrival order.** The gatekeeper handles one at a time, so a `grant` and an `unpublish` from different people can race in the ordinary way.
 - **HTTP/1.1 only** between cloudflared, the router and apps.
 
 ## What has not been tested
 
-Be careful with this list until it has been worked through.
+Results on real arm64 Ubuntu 24.04 with Hermes v0.22.5 were reported by the deployment at commit `30b01a8`. Later code changes are noted below.
 
 | Check | Status |
 |---|---|
-| Router: tokens, access rules, headers, cookies, streaming, WebSockets, revocation | **Ran for real** in `go test -race`: real RSA signatures, real loopback sockets, real upstream servers, hand-framed RFC 6455. The certs endpoint is a local fake |
-| Router against real Cloudflare tokens and certs | **Not run.** The token shape comes from Cloudflare's docs and the tests' own signer |
-| Router on arm64 Linux | **Built, not run.** Tests ran on macOS arm64 |
+| Router: tokens, access rules, headers, cookies, streaming, WebSockets, revocation | **Ran for real** on macOS with `go test -race`: real RSA signatures, real loopback sockets, real upstream servers, hand-framed RFC 6455. The certs endpoint is a local fake |
+| Router tests on arm64 Linux | **Ran for real**, without `-race`. Real Access keys were fetched |
+| Router with a real Access token, through the real tunnel | **Ran for real**: the owner's browser login reached a published app |
 | Gatekeeper logic and hostile requests | **Ran for real** on temp folders, as an ordinary user. `check_listener`, `chown` and user lookups are faked |
-| Gatekeeper with real `ss`, `/proc`, root and rootless Docker listeners | **Not run.** `ss` output parsing is tested on a sample line only |
+| Gatekeeper with real `ss`, `/proc`, root, plain and rootless Docker listeners, under the hardened unit | **Ran for real**, as designed. A `hermes-user` listener, `[::1]`, no listener, a reserved name, an out-of-range port, a collision, an extra field and a symlink were refused. A live `0.0.0.0` listener was deliberately not run; unit tests cover it |
+| systemd units | `systemd-analyze verify` is clean, and both units run |
 | Plugin to real gatekeeper code | **Ran for real** through the inbox, with the same three fakes |
 | Registry written by the real gatekeeper, read by the real router | **Ran for real** |
-| Plugin against real Hermes: session, hooks, approval gate, `send_message`, install, skill | **Not run.** Hermes is replaced by a stand-in written from the v0.22.5 source. `tests/test_hermes_integration.py` exists but has **never been executed** |
-| Approval prompt in real Telegram, tap approve and deny | **Not run** |
-| systemd units and their hardening | **Not run**, not even `systemd-analyze verify`. The gatekeeper's capability set is the likeliest thing to need adjusting, because `ss -p` must still identify other users' processes |
-| Install steps in this README | **Not run** |
+| Real Telegram approval | **Ran for real**: the prompt showed the app and exact address, deny blocked, approve added the guest |
+| Install with the command in this README | **Ran for real** |
+| `tests/test_hermes_integration.py` | Its earlier 5 tests passed on real Hermes one at a time at `30b01a8`, and interfered when run together. The test setup and owner-notice tests have since been rewritten. **The current file has not been run** |
+| Owner notice | The first path never sent (`Unknown tool: send_message`). The replacement has only run against a stand-in. **Not yet run on real Hermes or real Telegram** |
+| A second real guest account through the tunnel | **Not run** |
+| WebSockets through the real tunnel | **Not run** |
+| `/yolo` live | **Not run.** `approvals.mode: off` is covered in the real-Hermes test file |
+| The Access policy change | **Not run** |
 
 ## Tests
 
@@ -307,6 +312,8 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 ```bash
 cd router && go test -race ./...
 ```
+
+To run the Go tests in a container, mount the whole repo, not only `router/`: they read `tests/email_vectors.json` and `tests/write_registry_entry.py`.
 
 The Python suite needs only the standard library, and skips the real-Hermes file unless it is asked for. Don't run the real-Hermes file
 with your working directory inside `plugin/`.

@@ -5,7 +5,7 @@ description: How to build, run and publish a web app on this Hermes host so the 
 
 # Hosting an app
 
-Use this when a user asks you to build, host, publish or share a web app.
+Use this when a user asks you to build, host, publish or share a web app. This skill ships with the plugin and is read-only.
 
 ## Run it
 

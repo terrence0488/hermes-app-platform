@@ -55,6 +55,13 @@ def _install_fake_hermes() -> None:
     gateway.session_context = session_context
     constants = types.ModuleType("hermes_constants")
     constants.get_hermes_home = lambda: tempfile.gettempdir()
+    # send_message is not a registered tool in Hermes: the plugin imports this function, as `hermes send` does.
+    tools = types.ModuleType("tools")
+    tools.__path__ = []
+    send_module = types.ModuleType("tools.send_message_tool")
+    send_module.send_message_tool = lambda args, **kwargs: json.dumps({"error": "no notifier in this test"})
+    tools.send_message_tool = send_module
+    sys.modules.update({"tools": tools, "tools.send_message_tool": send_module})
     agent = types.ModuleType("agent")
     agent.__path__ = []
     redact = types.ModuleType("agent.redact")
@@ -195,14 +202,14 @@ class PluginTestCase(unittest.TestCase):
         self.addCleanup(self._restore_env, previous)
         self.notifications: list[tuple] = []
         self.notify_result = json.dumps({"success": True})
-        self.handlers.set_notifier(self._notifier)
-        self.addCleanup(self.handlers.set_notifier, None)
+        if not using_real_hermes():
+            sys.modules["tools.send_message_tool"].send_message_tool = self._notifier
         self.gate = FakeGate(self.hooks)
         unbind_session()
         self.addCleanup(unbind_session)
 
-    def _notifier(self, tool, args, **kwargs):
-        self.notifications.append((tool, args))
+    def _notifier(self, args, **kwargs):
+        self.notifications.append(args)
         if isinstance(self.notify_result, Exception):
             raise self.notify_result
         return self.notify_result

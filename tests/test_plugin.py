@@ -32,8 +32,6 @@ class RecordingContext:
     def register_skill(self, name, path):
         self.skills[name] = path
 
-    def dispatch_tool(self, tool, args, **kwargs):
-        return "{}"
 
 
 def _manifest_list(key):
@@ -46,7 +44,6 @@ class Manifest(unittest.TestCase):
     def setUp(self):
         self.ctx = RecordingContext()
         load_plugin().register(self.ctx)
-        self.addCleanup(plugin_module("handlers").set_notifier, None)
 
     def test_manifest_matches_registrations(self):
         self.assertEqual(sorted(_manifest_list("provides_tools")), sorted(self.ctx.tools))
@@ -71,7 +68,7 @@ class Manifest(unittest.TestCase):
             self.assertNotIn(key, project)
 
     def test_only_stdlib_and_documented_hermes_imports(self):
-        allowed = {"agent", "gateway", "hermes_constants"}
+        allowed = {"agent", "gateway", "hermes_constants", "tools"}
         for path in PLUGIN_DIR.glob("*.py"):
             for node in ast.walk(ast.parse(path.read_text())):
                 modules = []
@@ -333,8 +330,8 @@ class OwnerNotice(PluginTestCase):
 
     def test_owner_is_told_who_added_whom(self):
         self.assertIs(self.grant()["owner_notified"], True)
-        tool, args = self.notifications[0]
-        self.assertEqual((tool, args["action"], args["target"]), ("send_message", "send", "telegram:owner-chat"))
+        args = self.notifications[0]
+        self.assertEqual((args["action"], args["target"]), ("send", "telegram:owner-chat"))
         for part in ("Ada", "telegram:user-1", "myapp", ALICE, BOB):
             self.assertIn(part, args["message"])
         self.assertNotIn("‮", args["message"])
@@ -342,8 +339,8 @@ class OwnerNotice(PluginTestCase):
     def test_only_guests_really_added_are_named(self):
         self.keeper.reply = lambda request: {"status": "ok", "url": "u", "added": [BOB], "already": [ALICE]}
         self.grant()
-        self.assertIn(BOB, self.notifications[0][1]["message"])
-        self.assertNotIn(ALICE, self.notifications[0][1]["message"])
+        self.assertIn(BOB, self.notifications[0]["message"])
+        self.assertNotIn(ALICE, self.notifications[0]["message"])
 
     def test_nothing_new_means_no_notice(self):
         self.keeper.reply = lambda request: {"status": "ok", "url": "u", "added": [], "already": [ALICE, BOB]}
@@ -351,7 +348,8 @@ class OwnerNotice(PluginTestCase):
         self.assertEqual(self.notifications, [])
 
     def test_failed_notice_is_reported_and_does_not_undo_the_grant(self):
-        for failure in (json.dumps({"error": "no adapter"}), "not json", RuntimeError("boom")):
+        for failure in (json.dumps({"error": "no adapter"}), "not json", RuntimeError("boom"), json.dumps({"skipped": True}),
+                        json.dumps({"success": False}), json.dumps({"success": True, "error": "partly failed"})):
             with self.subTest(failure):
                 self.notify_result = failure
                 result = self.grant()
@@ -483,7 +481,7 @@ class WithRealGatekeeper(PluginTestCase):
         granted = self.gate.call("app_grant", self.handlers.app_grant, {"name": "myapp", "emails": ["Alice@Gmail.com", BOB]})
         self.assertEqual(granted["added"], [ALICE, BOB])
         self.assertEqual(self.entry("myapp")["guests"], [ALICE, BOB])
-        self.assertIn("telegram:teammate-2", self.notifications[0][1]["message"])
+        self.assertIn("telegram:teammate-2", self.notifications[0]["message"])
         self.assertEqual(self.entry("myapp")["created_by"], "telegram:teammate-1")
         revoked = self.call(self.handlers.app_revoke, {"name": "myapp", "emails": [BOB]})
         self.assertEqual(revoked["removed"], [BOB])

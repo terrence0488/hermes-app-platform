@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable
+from typing import Any
 
 from . import approvals
 from .config import ConfigError, load_config
@@ -14,13 +14,7 @@ from .validation import app_name, email_list
 
 logger = logging.getLogger(__name__)
 
-_notifier: Callable[..., str] | None = None
 _HANDLED = (ConfigError, IdentityError, ValueError, GatekeeperError)
-
-
-def set_notifier(dispatch_tool: Callable[..., str] | None) -> None:
-    global _notifier
-    _notifier = dispatch_tool
 
 
 def _error(message: object) -> str:
@@ -39,16 +33,18 @@ def is_available() -> bool:
 
 def _notify_owner(target: str, sender: Sender, name: str, url: object, added: list[str]) -> bool:
     """Tell the owner who added whom. The grant has happened by now, so a failure is reported, not undone."""
-    if _notifier is None:
-        return False
     message = (f"App guest added.\nApp: {name} ({url})\nAdded by: {sender.name} ({sender.key})\n"
                f"Guests: {', '.join(added)}")
     try:
-        result = json.loads(_notifier("send_message", {"action": "send", "target": target, "message": message}))
+        # send_message is deliberately not a registered tool, so ctx.dispatch_tool can't reach it. This is
+        # the function `hermes send` calls. It runs in this process with the gateway's own config.
+        from tools.send_message_tool import send_message_tool
+
+        result = json.loads(send_message_tool({"action": "send", "target": target, "message": message}))
     except Exception:
         logger.exception("could not notify the owner about a grant")
         return False
-    if isinstance(result, dict) and result.get("success"):
+    if isinstance(result, dict) and result.get("success") and not result.get("error"):
         return True
     logger.error("could not notify the owner about a grant: %s", result.get("error") if isinstance(result, dict) else result)
     return False

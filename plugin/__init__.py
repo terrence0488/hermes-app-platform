@@ -24,5 +24,4 @@ def register(ctx):
         )
     ctx.register_hook("pre_tool_call", hooks.require_grant_approval)
     ctx.register_hook("post_approval_response", hooks.record_approval)
-    handlers.set_notifier(ctx.dispatch_tool)
     ctx.register_skill("app-hosting", Path(__file__).parent / "skills" / "app-hosting" / "SKILL.md")
