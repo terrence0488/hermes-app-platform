@@ -9,11 +9,32 @@ Use this when a user asks you to build, host, publish or share a web app. This s
 
 ## Run it
 
-- Run the app through your normal terminal, as the agent user. It can be a plain process or a rootless Docker container.
-- Listen on `127.0.0.1` only, on a free port from 3000 to 3999. In Docker, publish it as `-p 127.0.0.1:3001:3000`.
-  Publishing is refused if the app also listens on `0.0.0.0` or `::`.
-- Keep it running after your command ends: a container with `--restart unless-stopped`, or a `systemd --user` service.
-- Check it answers first: `curl -sS http://127.0.0.1:3001/`.
+Run every app you publish in its own rootless Docker container. Apps run as plain processes share one Unix user, so a flaw in one
+can read the files of the others. Use a plain process only for a throwaway test you won't publish, or if the user explicitly asks
+for one after you've told them that.
+
+- Run Docker through your normal terminal, as the agent user. Never use `sudo`.
+- Give each app its own folder, `~/work/<name>/`, with a `compose.yaml`:
+
+  ```yaml
+  name: myapp
+  services:
+    app:
+      build: .                # or a pinned image: never :latest
+      restart: unless-stopped
+      mem_limit: 512m
+      ports:
+        - "127.0.0.1:3001:3000"
+  ```
+
+- Inside the container the app listens on `0.0.0.0`. On the host, publish only on `127.0.0.1`, on a free port from 3000 to 3999.
+  Publishing is refused if the port is also open on `0.0.0.0` or `::`, so never write `3001:3000` without the address.
+- Pin base images to a version, and use one that supports this host's CPU architecture.
+- Start with `mem_limit: 512m`. Raise it only if the app needs more: all apps share one memory cap.
+- Mount only what the app needs, in its own folder, read-only where you can. Keep data in a named volume or `./data`.
+- Never use `privileged`, `network_mode: host`, `cap_add`, or mount the Docker socket, your home folder or `~/.ssh`.
+- Keep one compose project per app, so each gets its own network. Don't join apps' networks unless the user asks for it.
+- Start it with `docker compose up -d --build`, then check it answers: `curl -sS http://127.0.0.1:3001/`.
 
 ## Publish it
 
@@ -53,5 +74,6 @@ set them to anything, so don't use them alone for anything sensitive.
 
 - Moving an app with guests to a new port is refused: `app_unpublish`, `app_publish`, then `app_grant` again. A new approval
   is needed, because guests would otherwise see whatever now runs on that port.
-- `app_unpublish(name)` removes the address and its guests. It doesn't stop the process, so stop that too if asked.
+- `app_unpublish(name)` removes the address and its guests. It doesn't stop the app. If asked to remove it, also run
+  `docker compose down` in its folder. Add `-v` or delete the folder only if the user confirms the data can go.
 - A port freed by a stopped app is still routed until the app is unpublished. Don't reuse a published app's port for something else.
