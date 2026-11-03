@@ -47,6 +47,8 @@ ACTION_FIELDS = {
 }
 BASE_FIELDS = {"id", "action", "requested_by"}
 ENTRY_FIELDS = {"name", "port", "created_by", "created_at", "guests"}
+# With rootless Docker, a published container port is held by rootlesskit on the host.
+CONTAINER_LISTENERS = {"/usr/bin/rootlesskit"}
 
 log = logging.getLogger("hermes-app-gatekeeper")
 
@@ -71,6 +73,9 @@ class Settings:
         self.max_apps = raw.get("max_apps", 20)
         self.max_guests_per_app = raw.get("max_guests_per_app", 50)
         self.max_emails_per_request = raw.get("max_emails_per_request", 20)
+        self.require_container = raw.get("require_container", False)
+        if not isinstance(self.require_container, bool):
+            raise ValueError("require_container must be true or false")
         self.reserved = frozenset(raw["reserved_names"])
         if not self.reserved:
             raise ValueError("reserved_names must list the hostnames with fixed tunnel routes")
@@ -199,7 +204,11 @@ def listeners_on(port):
 
 
 def check_listener(port, settings):
-    """The port must be bound to exactly 127.0.0.1, and only by processes the agent user owns."""
+    """The port must be bound to exactly 127.0.0.1, and only by processes the agent user owns.
+
+    require_container keeps apps in containers by default. It is not a security boundary: the agent user can run
+    rootlesskit itself.
+    """
     try:
         found = listeners_on(port)
     except (OSError, subprocess.SubprocessError):
@@ -220,6 +229,13 @@ def check_listener(port, settings):
                 raise Rejected(f"could not identify the process listening on port {port}") from None
             if owner != agent_uid:
                 raise Rejected(f"port {port} is not owned by {settings.agent_user}")
+            if settings.require_container:
+                try:
+                    executable = os.readlink(f"/proc/{pid}/exe")
+                except OSError:
+                    raise Rejected(f"could not identify the process listening on port {port}") from None
+                if executable not in CONTAINER_LISTENERS:
+                    raise Rejected(f"port {port} is served by a plain process; run the app in a rootless Docker container")
 
 
 def valid_entry(record, name, settings):

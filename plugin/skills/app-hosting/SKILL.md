@@ -10,8 +10,8 @@ Use this when a user asks you to build, host, publish or share a web app. This s
 ## Run it
 
 Run every app you publish in its own rootless Docker container. Apps run as plain processes share one Unix user, so a flaw in one
-can read the files of the others. Use a plain process only for a throwaway test you won't publish, or if the user explicitly asks
-for one after you've told them that.
+can read the files of the others. Publishing may refuse a port served by a plain process, so use one only for a throwaway test you
+won't publish.
 
 - Run Docker through your normal terminal, as the agent user. Never use `sudo`.
 - Give each app its own folder, `~/work/<name>/`, with a `compose.yaml`:

@@ -240,6 +240,7 @@ To add a teammate, edit `team.txt`. To remove one, edit it again: open connectio
 - Reads requests without following links or blocking on a FIFO. Refuses directories, hard links, files of another owner and oversize files.
 - Refuses duplicate JSON keys and any field that isn't expected for the action, so a request can't set `guests` or `created_by`.
 - Checks the name, reserved names, port range and collisions. The listener must be bound to exactly `127.0.0.1` and owned by the agent user.
+- With `require_container`, refuses a port not held by `/usr/bin/rootlesskit`, so apps run in rootless Docker containers. This keeps apps in containers by default and isn't a security boundary: the agent user can run rootlesskit itself.
 - Caps apps, guests per app and addresses per request. Refuses to act on a damaged registry.
 - Refuses to move an app with guests to a new port. Publishing needs no approval, so this would otherwise show guests something nobody approved.
 - Unpublishing forgets the guests, so they don't return if the name is reused.

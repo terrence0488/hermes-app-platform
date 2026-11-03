@@ -345,13 +345,19 @@ class HostileRequests(Case):
 
 
 class Listener(unittest.TestCase):
-    def run_check(self, listeners, owner):
+    def run_check(self, listeners, owner, require_container=False, executable="/usr/bin/rootlesskit"):
         fresh = importlib.util.module_from_spec(spec)
         loader.exec_module(fresh)
         fresh.log.disabled = True
         fresh.listeners_on = lambda port: listeners
-        fresh.os = type("O", (), {"stat": staticmethod(lambda p: type("S", (), {"st_uid": owner})())})
-        settings = type("S", (), {"agent_uid": 1003, "agent_user": "agent"})()
+        def readlink(path):
+            if executable is None:
+                raise OSError("gone")
+            return executable
+
+        fresh.os = type("O", (), {"stat": staticmethod(lambda p: type("S", (), {"st_uid": owner})()),
+                                  "readlink": staticmethod(readlink)})
+        settings = type("S", (), {"agent_uid": 1003, "agent_user": "agent", "require_container": require_container})()
         fresh.check_listener(3001, settings)
 
     def test_good(self):
@@ -376,6 +382,24 @@ class Listener(unittest.TestCase):
     def test_unknown_pid(self):
         with self.assertRaisesRegex(Exception, "identify"):
             self.run_check([("127.0.0.1:3001", [])], 1003)
+
+    def test_container_required_accepts_rootlesskit(self):
+        self.run_check([("127.0.0.1:3001", [10])], 1003, require_container=True)
+
+    def test_container_required_refuses_plain_process(self):
+        with self.assertRaisesRegex(Exception, "plain process"):
+            self.run_check([("127.0.0.1:3001", [10])], 1003, require_container=True, executable="/usr/bin/python3.12")
+
+    def test_container_required_refuses_rootlesskit_lookalike(self):
+        with self.assertRaisesRegex(Exception, "plain process"):
+            self.run_check([("127.0.0.1:3001", [10])], 1003, require_container=True, executable="/tmp/rootlesskit")
+
+    def test_container_required_refuses_unreadable_executable(self):
+        with self.assertRaisesRegex(Exception, "identify"):
+            self.run_check([("127.0.0.1:3001", [10])], 1003, require_container=True, executable=None)
+
+    def test_plain_process_allowed_when_not_required(self):
+        self.run_check([("127.0.0.1:3001", [10])], 1003, executable="/usr/bin/python3.12")
 
     def test_ss_line_parsing(self):
         fresh = importlib.util.module_from_spec(spec)
