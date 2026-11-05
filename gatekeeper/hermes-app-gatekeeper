@@ -234,7 +234,8 @@ def check_listener(port, settings):
                     executable = os.readlink(f"/proc/{pid}/exe")
                 except OSError:
                     raise Rejected(f"could not identify the process listening on port {port}") from None
-                if executable not in CONTAINER_LISTENERS:
+                # A package update replaces the binary under a running daemon, and the kernel then adds this suffix.
+                if executable.removesuffix(" (deleted)") not in CONTAINER_LISTENERS:
                     raise Rejected(f"port {port} is served by a plain process; run the app in a rootless Docker container")
 
 

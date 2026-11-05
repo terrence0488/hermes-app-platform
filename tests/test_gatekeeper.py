@@ -390,6 +390,13 @@ class Listener(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "plain process"):
             self.run_check([("127.0.0.1:3001", [10])], 1003, require_container=True, executable="/usr/bin/python3.12")
 
+    def test_container_required_accepts_rootlesskit_replaced_by_update(self):
+        self.run_check([("127.0.0.1:3001", [10])], 1003, require_container=True, executable="/usr/bin/rootlesskit (deleted)")
+
+    def test_container_required_refuses_deleted_plain_process(self):
+        with self.assertRaisesRegex(Exception, "plain process"):
+            self.run_check([("127.0.0.1:3001", [10])], 1003, require_container=True, executable="/usr/bin/python3 (deleted)")
+
     def test_container_required_refuses_rootlesskit_lookalike(self):
         with self.assertRaisesRegex(Exception, "plain process"):
             self.run_check([("127.0.0.1:3001", [10])], 1003, require_container=True, executable="/tmp/rootlesskit")
