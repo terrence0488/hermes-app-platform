@@ -355,11 +355,10 @@ var toolIcons = map[string]string{
 }
 
 const launcherCSS = `
-:root{color-scheme:light dark;--bg:#f6f6f7;--surface:#ffffff;--surface-2:#f2f2f4;--border:rgba(17,17,26,.08);--border-2:rgba(17,17,26,.15);--text:#0b0b10;--text-2:#53535c;--text-3:#8a8a94;--accent:#2563eb;--ring:rgba(37,99,235,.22);--glow:rgba(99,102,241,.09);--topbar:rgba(246,246,247,.78);--sh-1:0 1px 2px rgba(16,24,40,.04);--sh-2:0 1px 2px rgba(16,24,40,.04),0 14px 32px -14px rgba(16,24,40,.22);--warn-bg:#fffaeb;--warn-border:#fbe3a3;--warn-text:#8a4b06}
-@media (prefers-color-scheme:dark){:root{--bg:#09090b;--surface:#111114;--surface-2:#18181c;--border:rgba(255,255,255,.07);--border-2:rgba(255,255,255,.14);--text:#f4f4f6;--text-2:#a3a3ad;--text-3:#6f6f7a;--accent:#6ea8fe;--ring:rgba(110,168,254,.25);--glow:rgba(99,102,241,.16);--topbar:rgba(9,9,11,.72);--sh-1:inset 0 1px 0 rgba(255,255,255,.03);--sh-2:inset 0 1px 0 rgba(255,255,255,.05),0 18px 40px -18px rgba(0,0,0,.8);--warn-bg:rgba(245,158,11,.07);--warn-border:rgba(245,158,11,.22);--warn-text:#f8cf6a}}
+:root{color-scheme:dark;--bg:#141d24;--surface:#20292f;--surface-2:#283136;--border:rgba(255,255,255,.08);--border-2:rgba(255,255,255,.14);--text:rgba(255,255,255,.9);--text-2:rgba(255,255,255,.62);--text-3:rgba(255,255,255,.42);--accent:#2196f3;--ring:rgba(33,150,243,.32);--glow:rgba(33,150,243,.07);--topbar:rgba(40,49,54,.9);--sh-1:0 1px 2px hsl(0deg 0% 0% / .07),0 2px 4px hsl(0deg 0% 0% / .06);--sh-2:0 1px 2px hsl(0deg 0% 0% / .1),0 18px 40px -18px rgba(0,0,0,.65);--warn-bg:#3a2f16;--warn-border:rgba(245,158,11,.3);--warn-text:#f8d58a}
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
-body{margin:0;min-height:100vh;display:flex;flex-direction:column;background:var(--bg) radial-gradient(1100px 420px at 50% -180px,var(--glow),transparent 72%) no-repeat;color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI Variable Text","Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+body{margin:0;min-height:100vh;display:flex;flex-direction:column;background:var(--bg) radial-gradient(1100px 420px at 50% -180px,var(--glow),transparent 72%) no-repeat;color:var(--text);font:14px/1.5 Roboto,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 a{color:inherit;-webkit-tap-highlight-color:transparent}
 svg{display:block}
 .sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
@@ -471,9 +470,8 @@ const launcherHTML = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#f6f6f7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#283136">
 <title>Apps · {{.Domain}}</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236d4aed'/%3E%3Cg fill='%23fff'%3E%3Crect x='8' y='8' width='7' height='7' rx='2'/%3E%3Crect x='17' y='8' width='7' height='7' rx='2'/%3E%3Crect x='8' y='17' width='7' height='7' rx='2'/%3E%3Crect x='17' y='17' width='7' height='7' rx='2'/%3E%3C/g%3E%3C/svg%3E">
 <style>` + launcherCSS + `</style>
