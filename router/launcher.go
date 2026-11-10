@@ -282,7 +282,9 @@ func (l *Launcher) ServeHTTP(w http.ResponseWriter, request *http.Request, email
 	log.Printf("launcher email=%q tools=%d apps=%d", email, len(page.Tools), len(page.Apps))
 	header := w.Header()
 	header.Set("Content-Type", "text/html; charset=utf-8")
-	header.Set("Cache-Control", "no-store")
+	// no-transform keeps Cloudflare from rewriting the page: its email obfuscation would replace
+	// the signed-in address with "[email protected]" and a decoder script the CSP blocks.
+	header.Set("Cache-Control", "no-store, no-transform")
 	header.Set("X-Content-Type-Options", "nosniff")
 	header.Set("X-Frame-Options", "DENY")
 	header.Set("X-Robots-Tag", "noindex, nofollow")

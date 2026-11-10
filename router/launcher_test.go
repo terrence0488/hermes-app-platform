@@ -128,7 +128,7 @@ func TestLauncherHeadersAndMethods(t *testing.T) {
 		t.Fatalf("status %d", status)
 	}
 	for key, want := range map[string]string{
-		"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Frame-Options": "DENY",
+		"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store, no-transform", "X-Frame-Options": "DENY",
 		"X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer",
 	} {
 		if got := header.Get(key); got != want {
