@@ -212,12 +212,33 @@ Then in chat:
 | `/etc/hermes-apps/gatekeeper.json` | root, `644` | Domain, users, port range, caps, folders |
 | `/etc/hermes-apps/router.json` | root, `644` | Listen address, domain, Access team and audience, folders |
 | `/etc/hermes-apps/team.txt` | root, `644` | One team email per line. No domain rule |
+| `/etc/hermes-apps/launcher.json` | root:`hermes-app-router`, `640` | Optional launcher tools and groups (see below) |
 | `/var/lib/hermes-apps/registry/<app>.json` | root:`hermes-app-router`, `640` | `{"name", "port", "created_by", "created_at", "guests": []}` |
 | `~hermes-user/.hermes/app_platform.json` | `hermes-user`, `600` | Inbox and results paths, allowed platforms, owner's chat |
 
 None of them holds a secret. The router needs outbound HTTPS to fetch `https://<team>.cloudflareaccess.com/cdn-cgi/access/certs`.
 
 To add a teammate, edit `team.txt`. To remove one, edit it again: open connections end within `recheck_seconds`.
+
+## Launcher page (optional)
+
+One page, for example `apps.<domain>`, that lists for the signed-in person the fixed tools they may open (set by hand) and
+the published apps they can reach (from the registry). It only links: each tool keeps its own Access application, and each app
+is still checked as usual. The AI can't change it: both sources are root-owned.
+
+1. Reserve the name: add `apps` to `reserved_names` in `gatekeeper.json`, then `--check-config`.
+2. Write `/etc/hermes-apps/launcher.json` from `deploy/launcher.example.json`, owned `root:hermes-app-router`, mode `640` (it names
+   people). `groups` are lists of lower-case emails; `visible_to` names groups, or `team` for `team.txt`. A tool's address is always
+   `https://<name>.<domain>/`, so a tile can't point anywhere else. Icons are built in: `vault`, `files`, `browser`, `app`, `chart`,
+   `chat`. Mirror each tool's own Access policy in `visible_to`; the launcher can't read it.
+3. Add `"launcher_host": "apps"` and `"launcher_file": "/etc/hermes-apps/launcher.json"` to `router.json`, run `-check`, restart.
+   The wildcard tunnel route and Access app already cover the name.
+
+Who sees what: a tool appears to the members of its `visible_to` groups; an app appears to the team and to its own guests. Someone
+with nothing gets "Nothing here for you yet." The page needs a valid token like everything else (401 without), takes `GET`/`HEAD` on
+`/` only, carries no external resources, and is sent with a hash-pinned CSP, `X-Frame-Options: DENY`, `no-store` and `noindex`. A
+launcher file or registry entry that can't be trusted is left out and the page says some shortcuts couldn't be loaded; `-check`
+refuses it outright. Edits apply on the next page view.
 
 ## What is enforced in code
 
@@ -289,6 +310,8 @@ Results on real arm64 Ubuntu 24.04 with Hermes v0.22.5 were reported by the depl
 |---|---|
 | Router: tokens, access rules, headers, cookies, streaming, WebSockets, revocation | **Ran for real** on macOS with `go test -race`: real RSA signatures, real loopback sockets, real upstream servers, hand-framed RFC 6455. The certs endpoint is a local fake |
 | Router tests on arm64 Linux | **Ran for real**, without `-race`. Real Access keys were fetched |
+| Launcher page: tokens, per-person tiles, bad and untrusted files, escaping, CSP hashes | **Ran for real** in `go test` (no `-race`, in `golang:1.25-alpine`). On the host: 401 without or with a forged token, `-check` passes |
+| Launcher with a real Access token in a browser | **Not run yet** |
 | Router with a real Access token, through the real tunnel | **Ran for real**: the owner's browser login reached a published app |
 | Gatekeeper logic and hostile requests | **Ran for real** on temp folders, as an ordinary user. `check_listener`, `chown` and user lookups are faked |
 | Gatekeeper with real `ss`, `/proc`, root, plain and rootless Docker listeners, under the hardened unit | **Ran for real**, as designed. A `hermes-user` listener, `[::1]`, no listener, a reserved name, an out-of-range port, a collision, an extra field and a symlink were refused. A live `0.0.0.0` listener was deliberately not run; unit tests cover it |

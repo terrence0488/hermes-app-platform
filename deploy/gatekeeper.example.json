@@ -4,7 +4,12 @@
   "requester_user": "hermes-user",
   "registry_group": "hermes-app-router",
   "result_group": "hermes-user",
-  "reserved_names": ["hermes", "browser", "www"],
+  "reserved_names": [
+    "hermes",
+    "browser",
+    "www",
+    "apps"
+  ],
   "require_container": true,
   "port_min": 3000,
   "port_max": 3999,

@@ -31,7 +31,7 @@ func newServer(config *Config, handler http.Handler) *http.Server {
 }
 
 // check tries everything the router needs, for use before it takes any traffic.
-func check(config *Config, verifier *Verifier, store *Store) error {
+func check(config *Config, verifier *Verifier, store *Store, launcher *Launcher) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	if err := verifier.Refresh(ctx); err != nil {
@@ -43,6 +43,16 @@ func check(config *Config, verifier *Verifier, store *Store) error {
 	}
 	if _, err := store.App("hermes-app-router-check"); err != nil {
 		return fmt.Errorf("registry: %w", err)
+	}
+	if launcher != nil {
+		file, err := launcher.Load()
+		if err != nil {
+			return fmt.Errorf("launcher: %w", err)
+		}
+		if _, err := store.Apps(); err != nil {
+			return fmt.Errorf("launcher: registry: %w", err)
+		}
+		fmt.Printf("ok: launcher on %s.%s with %d tools\n", config.LauncherHost, config.Domain, len(file.Tools))
 	}
 	fmt.Printf("ok: Access keys fetched, %d team members, %d team lines ignored\n", len(team), len(bad))
 	return nil
@@ -61,7 +71,7 @@ func main() {
 	verifier := newVerifier(config)
 	store := newStore(config)
 	if *checkOnly {
-		if err := check(config, verifier, store); err != nil {
+		if err := check(config, verifier, store, newLauncher(config, store)); err != nil {
 			log.Fatal(err)
 		}
 		return

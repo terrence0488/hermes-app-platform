@@ -48,6 +48,7 @@ type Router struct {
 	store        *Store
 	recheck      time.Duration
 	proxy        *httputil.ReverseProxy
+	launcher     *Launcher // nil when no launcher is configured
 }
 
 func newRouter(config *Config, verifier *Verifier, store *Store) *Router {
@@ -56,6 +57,7 @@ func newRouter(config *Config, verifier *Verifier, store *Store) *Router {
 		verifier:     verifier,
 		store:        store,
 		recheck:      config.recheckInterval(),
+		launcher:     newLauncher(config, store),
 	}
 	router.proxy = &httputil.ReverseProxy{
 		Rewrite:        rewrite,
@@ -145,6 +147,10 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 	if !ok {
 		log.Printf("refused host=%q email=%q: not an app hostname", request.Host, identity.Email)
 		deny(w, http.StatusNotFound, "Not found")
+		return
+	}
+	if r.launcher != nil && name == r.launcher.host {
+		r.launcher.ServeHTTP(w, request, identity.Email)
 		return
 	}
 	allowed, status, body := r.authorize(name, identity.Email)

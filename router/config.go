@@ -29,6 +29,9 @@ type Config struct {
 	PortMin        int    `json:"port_min"`
 	PortMax        int    `json:"port_max"`
 	RecheckSeconds int    `json:"recheck_seconds"`
+	// Optional launcher page: a reserved hostname label and its root-owned tools file.
+	LauncherHost string `json:"launcher_host,omitempty"`
+	LauncherFile string `json:"launcher_file,omitempty"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -67,6 +70,12 @@ func (c *Config) validate() error {
 	}
 	if c.RecheckSeconds < 1 {
 		return errors.New("recheck_seconds must be at least 1")
+	}
+	if (c.LauncherHost == "") != (c.LauncherFile == "") {
+		return errors.New("launcher_host and launcher_file go together: set both or neither")
+	}
+	if c.LauncherHost != "" && !validAppName(c.LauncherHost) {
+		return errors.New("launcher_host must be a single hostname label, such as apps")
 	}
 	host, portText, err := net.SplitHostPort(c.Listen)
 	if err != nil {

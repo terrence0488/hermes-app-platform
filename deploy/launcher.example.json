@@ -1,0 +1,36 @@
+{
+  "groups": {
+    "admins": [
+      "owner@example.com"
+    ]
+  },
+  "tools": [
+    {
+      "name": "vault",
+      "title": "Vault",
+      "description": "Logins for automated sites",
+      "icon": "vault",
+      "visible_to": [
+        "admins"
+      ]
+    },
+    {
+      "name": "files",
+      "title": "Files",
+      "description": "Workspace files",
+      "icon": "files",
+      "visible_to": [
+        "admins"
+      ]
+    },
+    {
+      "name": "browser",
+      "title": "Browser",
+      "description": "The shared browser",
+      "icon": "browser",
+      "visible_to": [
+        "admins"
+      ]
+    }
+  ]
+}
