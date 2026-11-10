@@ -174,6 +174,7 @@ type tile struct {
 	URL         string
 	Icon        template.HTML // only ever one of the constants in toolIcons
 	IconName    string
+	Host        string
 	Letter      string
 	Color       string
 	Key         string
@@ -181,9 +182,11 @@ type tile struct {
 
 type launcherPage struct {
 	Email   string
+	Initial string
+	Domain  string
 	Tools   []tile
 	Apps    []tile
-	Search  bool
+	Total   int
 	Warning bool
 }
 
@@ -194,7 +197,7 @@ func (l *Launcher) url(name string) string {
 // build works out what this person sees. A source that can't be trusted shows nothing from that
 // source and a warning, never something it might not have meant.
 func (l *Launcher) build(email string) launcherPage {
-	page := launcherPage{Email: email}
+	page := launcherPage{Email: email, Initial: strings.ToUpper(email[:1]), Domain: l.domain}
 	var problems []string
 
 	team, _, err := l.store.Team()
@@ -210,7 +213,7 @@ func (l *Launcher) build(email string) launcherPage {
 			if visibleTo(tool.VisibleTo, file.Groups, team, email) {
 				page.Tools = append(page.Tools, tile{
 					Title: tool.Title, Description: tool.Description, URL: l.url(tool.Name),
-					Icon: template.HTML(toolIcons[tool.Icon]), IconName: tool.Icon, Key: strings.ToLower(tool.Title + " " + tool.Description + " " + tool.Name),
+					Icon: template.HTML(toolIcons[tool.Icon]), IconName: tool.Icon, Host: tool.Name + "." + l.domain, Key: strings.ToLower(tool.Title + " " + tool.Description + " " + tool.Name),
 				})
 			}
 		}
@@ -225,13 +228,13 @@ func (l *Launcher) build(email string) launcherPage {
 			continue
 		}
 		page.Apps = append(page.Apps, tile{
-			Title: entry.Name, Description: "Published app", URL: l.url(entry.Name),
+			Title: entry.Name, Description: "Published app", URL: l.url(entry.Name), Host: entry.Name + "." + l.domain,
 			Letter: strings.ToUpper(entry.Name[:1]), Color: colorFor(entry.Name), Key: entry.Name,
 		})
 	}
 
 	page.Warning = len(problems) > 0
-	page.Search = len(page.Tools)+len(page.Apps) > 9
+	page.Total = len(page.Tools) + len(page.Apps)
 	l.logOnce(strings.Join(problems, "; "))
 	return page
 }
@@ -338,75 +341,163 @@ var (
 	launcherTemplate = template.Must(template.New("launcher").Parse(launcherHTML))
 )
 
-// Icons are fixed SVG drawn in the binary; the launcher file only picks one by name.
+// Icons are fixed SVG drawn in the binary; the launcher file only picks one by name. They inherit
+// the glyph's colour through currentColor.
 var toolIcons = map[string]string{
-	"vault":   `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.5" r="1.6"/></svg>`,
-	"files":   `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2.5h6.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></svg>`,
-	"browser": `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg>`,
-	"app":     `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg>`,
-	"chart":   `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V4M4 20h16"/><path d="M8 16v-4M12 16V8M16 16v-6"/></svg>`,
-	"chat":    `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 3.5V17h0A2.5 2.5 0 0 1 4 14.5z"/></svg>`,
+	"vault":   `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2"/></svg>`,
+	"files":   `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 8A2.5 2.5 0 0 1 6 5.5h3.6a2 2 0 0 1 1.5.7l1.1 1.3H18A2.5 2.5 0 0 1 20.5 10v7.5A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5z"/><path d="M3.5 10.5h17"/></svg>`,
+	"browser": `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9h18"/><path d="M6.5 6.75h.01M9 6.75h.01"/></svg>`,
+	"app":     `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/></svg>`,
+	"chart":   `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16h16"/><path d="M8 15l3.5-4 3 2.5L19 8"/></svg>`,
+	"chat":    `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a7.5 7.5 0 0 1-11 6.6L4 20l1.4-4.6A7.5 7.5 0 1 1 20 12z"/></svg>`,
 }
 
 const launcherCSS = `
-:root{color-scheme:dark;--bg:#0f1115;--panel:#171a21;--line:#262a33;--text:#e8eaef;--muted:#9aa1ad;--focus:#7aa2ff}
-*{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-main{max-width:960px;margin:0 auto;padding:40px 16px 64px}
-header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px;margin-bottom:28px}
-h1{font-size:26px;font-weight:650;margin:0;letter-spacing:-.01em}
-.who{color:var(--muted);font-size:13px;overflow-wrap:anywhere}
-h2{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:28px 0 12px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
-.tile{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:20px 12px 16px;border:1px solid var(--line);border-radius:18px;background:var(--panel);color:inherit;text-decoration:none;transition:transform .12s ease,border-color .12s ease,background .12s ease}
-.tile:hover{transform:translateY(-2px);border-color:#3a4050;background:#1b1f27}
-.tile:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
-.tile[hidden],section[hidden]{display:none}
-.icon{width:64px;height:64px;border-radius:16px;display:grid;place-items:center;font-size:28px;font-weight:650;color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.18)}
-.icon svg{width:32px;height:32px;fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.i-vault{background:linear-gradient(145deg,#f59e0b,#b45309)}
-.i-files{background:linear-gradient(145deg,#3b82f6,#1d4ed8)}
-.i-browser{background:linear-gradient(145deg,#14b8a6,#0f766e)}
-.i-app,.i-chart,.i-chat{background:linear-gradient(145deg,#8b5cf6,#6d28d9)}
-.c0{background:linear-gradient(145deg,#ef4444,#b91c1c)}.c1{background:linear-gradient(145deg,#f97316,#c2410c)}
-.c2{background:linear-gradient(145deg,#eab308,#a16207)}.c3{background:linear-gradient(145deg,#22c55e,#15803d)}
-.c4{background:linear-gradient(145deg,#06b6d4,#0e7490)}.c5{background:linear-gradient(145deg,#6366f1,#4338ca)}
-.c6{background:linear-gradient(145deg,#d946ef,#a21caf)}.c7{background:linear-gradient(145deg,#ec4899,#be185d)}
-.name{font-weight:600;font-size:15px;overflow-wrap:anywhere}
-.desc{color:var(--muted);font-size:12.5px;line-height:1.35;overflow-wrap:anywhere}
-.search{width:100%;max-width:360px;padding:10px 14px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--text);font:inherit}
-.search:focus{outline:2px solid var(--focus);outline-offset:1px}
-.empty,.warn{color:var(--muted);padding:32px 0;text-align:center}
-.warn{padding:10px 14px;border:1px solid #5b4a1f;background:#221d10;color:#e9d39a;border-radius:12px;text-align:left;margin-bottom:8px}
-@media (max-width:420px){.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.tile{padding:16px 8px 12px}main{padding-top:28px}}
+:root{color-scheme:light dark;--bg:#f6f6f7;--surface:#ffffff;--surface-2:#f2f2f4;--border:rgba(17,17,26,.08);--border-2:rgba(17,17,26,.15);--text:#0b0b10;--text-2:#53535c;--text-3:#8a8a94;--accent:#2563eb;--ring:rgba(37,99,235,.22);--glow:rgba(99,102,241,.09);--topbar:rgba(246,246,247,.78);--sh-1:0 1px 2px rgba(16,24,40,.04);--sh-2:0 1px 2px rgba(16,24,40,.04),0 14px 32px -14px rgba(16,24,40,.22);--warn-bg:#fffaeb;--warn-border:#fbe3a3;--warn-text:#8a4b06}
+@media (prefers-color-scheme:dark){:root{--bg:#09090b;--surface:#111114;--surface-2:#18181c;--border:rgba(255,255,255,.07);--border-2:rgba(255,255,255,.14);--text:#f4f4f6;--text-2:#a3a3ad;--text-3:#6f6f7a;--accent:#6ea8fe;--ring:rgba(110,168,254,.25);--glow:rgba(99,102,241,.16);--topbar:rgba(9,9,11,.72);--sh-1:inset 0 1px 0 rgba(255,255,255,.03);--sh-2:inset 0 1px 0 rgba(255,255,255,.05),0 18px 40px -18px rgba(0,0,0,.8);--warn-bg:rgba(245,158,11,.07);--warn-border:rgba(245,158,11,.22);--warn-text:#f8cf6a}}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;min-height:100vh;display:flex;flex-direction:column;background:var(--bg) radial-gradient(1100px 420px at 50% -180px,var(--glow),transparent 72%) no-repeat;color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI Variable Text","Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+a{color:inherit;-webkit-tap-highlight-color:transparent}
+svg{display:block}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.topbar{position:sticky;top:0;z-index:10;background:var(--topbar);-webkit-backdrop-filter:saturate(180%) blur(14px);backdrop-filter:saturate(180%) blur(14px);border-bottom:1px solid var(--border)}
+.topbar-in{max-width:1120px;height:56px;margin:0 auto;padding:0 24px;display:flex;align-items:center;gap:12px}
+.brand{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;letter-spacing:-.01em;text-decoration:none}
+.mark{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 55%,#db2777 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 1px 2px rgba(16,24,40,.25)}
+.mark svg{width:15px;height:15px;fill:#fff}
+.divider{width:1px;height:18px;background:var(--border-2);transform:rotate(18deg)}
+.domain{color:var(--text-3);font-size:14px;white-space:nowrap}
+.spacer{flex:1}
+.account{display:flex;align-items:center;gap:12px;min-width:0}
+.who{display:flex;align-items:center;gap:10px;min-width:0}
+.email{color:var(--text-2);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px}
+.avatar{width:30px;height:30px;flex:none;border-radius:50%;display:grid;place-items:center;font-size:12.5px;font-weight:600;color:#fff;background:linear-gradient(135deg,#0ea5e9,#6366f1);box-shadow:0 0 0 2px var(--surface),0 0 0 3px var(--border-2)}
+.signout{flex:none;height:32px;display:inline-flex;align-items:center;padding:0 12px;border-radius:8px;border:1px solid var(--border-2);background:var(--surface);box-shadow:var(--sh-1);color:var(--text-2);font-size:13px;font-weight:500;text-decoration:none;transition:color .15s,border-color .15s,background .15s}
+.signout:hover{color:var(--text);background:var(--surface-2)}
+.signout:focus-visible{outline:none;box-shadow:0 0 0 3px var(--ring);border-color:var(--accent)}
+main{width:100%;max-width:1120px;margin:0 auto;padding:56px 24px 72px;flex:1}
+.hero{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:20px 32px;margin-bottom:40px}
+h1{margin:0;font-size:32px;line-height:1.15;font-weight:650;letter-spacing:-.028em}
+.lede{margin:8px 0 0;color:var(--text-2);font-size:15px}
+.search{position:relative;display:block;width:min(100%,360px)}
+.search svg{position:absolute;left:13px;top:50%;width:16px;height:16px;transform:translateY(-50%);fill:none;stroke:var(--text-3);stroke-width:2;stroke-linecap:round;pointer-events:none}
+.search input{width:100%;height:42px;padding:0 48px 0 40px;border-radius:11px;border:1px solid var(--border-2);background:var(--surface);box-shadow:var(--sh-1);color:var(--text);font:inherit;font-size:14px;-webkit-appearance:none;appearance:none;transition:border-color .15s,box-shadow .15s}
+.search input::placeholder{color:var(--text-3)}
+.search input::-webkit-search-cancel-button{-webkit-appearance:none}
+.search input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px var(--ring)}
+.search kbd{position:absolute;right:11px;top:50%;transform:translateY(-50%);min-width:22px;height:22px;display:grid;place-items:center;padding:0 6px;border-radius:6px;border:1px solid var(--border-2);border-bottom-width:2px;background:var(--surface-2);color:var(--text-3);font:500 11.5px/1 ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace}
+.search input:focus~kbd{opacity:0}
+.alert{display:flex;gap:12px;align-items:flex-start;margin:0 0 32px;padding:12px 16px;border-radius:12px;border:1px solid var(--warn-border);background:var(--warn-bg);color:var(--warn-text);font-size:13.5px}
+.alert svg{width:18px;height:18px;flex:none;margin-top:1px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.alert strong{font-weight:600}
+section+section{margin-top:44px}
+.sec-head{display:flex;align-items:center;gap:10px;margin:0 0 16px}
+h2{margin:0;font-size:15px;font-weight:600;letter-spacing:-.01em}
+.count{min-width:22px;height:20px;display:inline-grid;place-items:center;padding:0 7px;border-radius:999px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);font-size:11.5px;font-weight:500;font-variant-numeric:tabular-nums}
+.sec-note{margin-left:auto;color:var(--text-3);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
+.card{position:relative;display:flex;flex-direction:column;min-height:176px;padding:20px;border-radius:16px;border:1px solid var(--border);background:var(--surface);box-shadow:var(--sh-1);text-decoration:none;outline:none;transition:transform .2s cubic-bezier(.2,.7,.2,1),box-shadow .2s,border-color .2s}
+.card:hover{transform:translateY(-2px);border-color:var(--border-2);box-shadow:var(--sh-2)}
+.card:active{transform:translateY(0);transition-duration:.06s}
+.card:focus-visible{border-color:var(--accent);box-shadow:0 0 0 4px var(--ring)}
+.card[hidden],section[hidden],.empty[hidden]{display:none}
+.glyph{width:46px;height:46px;flex:none;border-radius:13px;display:grid;place-items:center;margin-bottom:18px;color:#fff;font-size:19px;font-weight:650;letter-spacing:-.02em;box-shadow:inset 0 1px 0 rgba(255,255,255,.3),inset 0 -1px 0 rgba(0,0,0,.1),0 1px 2px rgba(16,24,40,.14),0 6px 14px -6px rgba(16,24,40,.35)}
+.glyph svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.body{display:flex;flex-direction:column;min-width:0}
+.title{font-size:15.5px;font-weight:600;letter-spacing:-.012em;color:var(--text);overflow-wrap:anywhere}
+.desc{margin-top:4px;color:var(--text-2);font-size:13.5px;line-height:1.45}
+.host{margin-top:auto;padding-top:18px;color:var(--text-3);font:12px/1 ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.go{position:absolute;top:20px;right:20px;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:var(--text-3);opacity:0;transform:translate(-4px,4px);transition:opacity .2s,transform .2s cubic-bezier(.2,.7,.2,1),background .2s,color .2s}
+.go svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.card:hover .go,.card:focus-visible .go{opacity:1;transform:none;color:var(--text);background:var(--surface-2)}
+.g-vault{background:linear-gradient(155deg,#fbbf24,#ea580c)}
+.g-files{background:linear-gradient(155deg,#60a5fa,#2563eb)}
+.g-browser{background:linear-gradient(155deg,#34d399,#0d9488)}
+.g-app{background:linear-gradient(155deg,#a78bfa,#6d28d9)}
+.g-chart{background:linear-gradient(155deg,#818cf8,#4338ca)}
+.g-chat{background:linear-gradient(155deg,#f472b6,#be185d)}
+.c0{background:linear-gradient(155deg,#fb7185,#e11d48)}.c1{background:linear-gradient(155deg,#fb923c,#ea580c)}
+.c2{background:linear-gradient(155deg,#facc15,#ca8a04)}.c3{background:linear-gradient(155deg,#4ade80,#16a34a)}
+.c4{background:linear-gradient(155deg,#22d3ee,#0891b2)}.c5{background:linear-gradient(155deg,#818cf8,#4f46e5)}
+.c6{background:linear-gradient(155deg,#e879f9,#a21caf)}.c7{background:linear-gradient(155deg,#94a3b8,#475569)}
+.empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:72px 24px;border:1px dashed var(--border-2);border-radius:18px}
+.empty .glyph{margin-bottom:16px;background:var(--surface-2);color:var(--text-3);border:1px solid var(--border);box-shadow:var(--sh-1)}
+.empty h2{font-size:16px}
+.empty p{max-width:380px;margin:6px 0 0;color:var(--text-2)}
+.term{color:var(--text);font-weight:500}
+footer{width:100%;max-width:1120px;margin:0 auto;padding:0 24px 36px;display:flex;align-items:center;gap:8px;color:var(--text-3);font-size:12.5px}
+footer svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+@media (max-width:720px){.email,.divider,.domain{display:none}}
+@media (max-width:640px){
+.topbar-in{padding:0 16px;height:52px}
+main{padding:28px 16px 56px}
+h1{font-size:26px}
+.lede{font-size:14px}
+.hero{gap:18px;margin-bottom:28px}
+.search{width:100%}
+.search kbd{display:none}
+.search input{padding-right:14px}
+section+section{margin-top:32px}
+.sec-note{display:none}
+.grid{grid-template-columns:1fr;gap:10px}
+.card{flex-direction:row;align-items:center;gap:14px;min-height:0;padding:14px 14px 14px 16px;border-radius:14px}
+.card:hover{transform:none}
+.glyph{width:42px;height:42px;border-radius:12px;margin:0}
+.glyph svg{width:21px;height:21px}
+.body{flex:1}
+.title{font-size:15px}
+.desc{margin-top:1px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.host{display:none}
+.go{position:static;opacity:1;transform:none;width:24px;height:24px;color:var(--text-3);background:none}
+.card:hover .go,.card:focus-visible .go{background:none}
+.empty{padding:48px 20px}
+footer{padding:0 16px 28px}
+}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}}
 `
 
 const launcherJS = `
-(function(){var q=document.getElementById("q");if(!q)return;q.addEventListener("input",function(){var v=q.value.trim().toLowerCase();document.querySelectorAll(".tile").forEach(function(t){t.hidden=!!v&&t.getAttribute("data-k").indexOf(v)<0});document.querySelectorAll("section").forEach(function(s){s.hidden=!s.querySelector(".tile:not([hidden])")})})})();
+(function(){var h=new Date().getHours(),g=document.getElementById("greet");if(g){g.textContent=h<5?"Good evening":h<12?"Good morning":h<18?"Good afternoon":"Good evening"}var q=document.getElementById("q");if(!q)return;var cards=[].slice.call(document.querySelectorAll(".card")),secs=[].slice.call(document.querySelectorAll("section")),none=document.getElementById("none"),term=document.getElementById("term");function run(){var v=q.value.trim().toLowerCase(),n=0;cards.forEach(function(c){var m=!v||c.getAttribute("data-k").indexOf(v)>=0;c.hidden=!m;if(m)n++});secs.forEach(function(s){s.hidden=!s.querySelector(".card:not([hidden])")});none.hidden=n>0;term.textContent=q.value.trim()}q.addEventListener("input",run);q.addEventListener("keydown",function(e){if(e.key==="Escape"){q.value="";run();q.blur()}else if(e.key==="Enter"){var f=cards.filter(function(c){return!c.hidden})[0];if(f){e.preventDefault();window.location.href=f.href}}});document.addEventListener("keydown",function(e){var t=e.target&&e.target.tagName;if((e.key==="/"&&t!=="INPUT"&&t!=="TEXTAREA")||((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k")){e.preventDefault();q.focus();q.select()}})})();
 `
+
+const arrowIcon = `<span class="go" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8"/></svg></span>`
 
 const launcherHTML = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<title>Apps</title>
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f6f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)">
+<title>Apps · {{.Domain}}</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236d4aed'/%3E%3Cg fill='%23fff'%3E%3Crect x='8' y='8' width='7' height='7' rx='2'/%3E%3Crect x='17' y='8' width='7' height='7' rx='2'/%3E%3Crect x='8' y='17' width='7' height='7' rx='2'/%3E%3Crect x='17' y='17' width='7' height='7' rx='2'/%3E%3C/g%3E%3C/svg%3E">
 <style>` + launcherCSS + `</style>
 </head>
 <body>
+<header class="topbar"><div class="topbar-in">
+<a class="brand" href="/"><span class="mark"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="1" width="6" height="6" rx="1.6"/><rect x="9" y="1" width="6" height="6" rx="1.6"/><rect x="1" y="9" width="6" height="6" rx="1.6"/><rect x="9" y="9" width="6" height="6" rx="1.6"/></svg></span>Apps</a>
+<span class="divider" aria-hidden="true"></span><span class="domain">{{.Domain}}</span>
+<span class="spacer"></span>
+<div class="account"><span class="who"><span class="sr-only">Signed in as</span><span class="email" title="{{.Email}}">{{.Email}}</span><span class="avatar" aria-hidden="true" title="{{.Email}}">{{.Initial}}</span></span><a class="signout" href="/cdn-cgi/access/logout">Sign out</a></div>
+</div></header>
 <main>
-<header><h1>Apps</h1><span class="who">Signed in as {{.Email}}</span></header>
-{{if .Warning}}<p class="warn">Some shortcuts could not be loaded. The owner has been told in the server log.</p>{{end}}
-{{if .Search}}<input id="q" class="search" type="search" placeholder="Search" aria-label="Search apps" autocomplete="off">{{end}}
-{{if .Tools}}<section><h2>Tools</h2><div class="grid">{{range .Tools}}
-<a class="tile" href="{{.URL}}" data-k="{{.Key}}"><span class="icon i-{{.IconName}}">{{.Icon}}</span><span class="name">{{.Title}}</span>{{if .Description}}<span class="desc">{{.Description}}</span>{{end}}</a>{{end}}
+<div class="hero"><div><h1 id="greet">Welcome back</h1><p class="lede">Everything you can open, in one place.</p></div>
+{{if .Total}}<label class="search"><span class="sr-only">Search apps and tools</span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="Search apps and tools" autocomplete="off" spellcheck="false" enterkeyhint="go"><kbd aria-hidden="true">/</kbd></label>{{end}}
+</div>
+{{if .Warning}}<div class="alert" role="status"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 20h19z"/><path d="M12 10v4M12 17h.01"/></svg><div><strong>Some shortcuts could not be loaded.</strong> Everything else is shown below; the details are in the server log.</div></div>{{end}}
+{{if .Tools}}<section aria-labelledby="h-tools"><div class="sec-head"><h2 id="h-tools">Tools</h2><span class="count">{{len .Tools}}</span></div><div class="grid">{{range .Tools}}
+<a class="card" href="{{.URL}}" data-k="{{.Key}}"><span class="glyph g-{{.IconName}}">{{.Icon}}</span><span class="body"><span class="title">{{.Title}}</span>{{if .Description}}<span class="desc">{{.Description}}</span>{{end}}</span><span class="host">{{.Host}}</span>` + arrowIcon + `</a>{{end}}
 </div></section>{{end}}
-{{if .Apps}}<section><h2>Your apps</h2><div class="grid">{{range .Apps}}
-<a class="tile" href="{{.URL}}" data-k="{{.Key}}"><span class="icon {{.Color}}">{{.Letter}}</span><span class="name">{{.Title}}</span><span class="desc">{{.Description}}</span></a>{{end}}
+{{if .Apps}}<section aria-labelledby="h-apps"><div class="sec-head"><h2 id="h-apps">Apps</h2><span class="count">{{len .Apps}}</span><span class="sec-note">Built and published with Hermes</span></div><div class="grid">{{range .Apps}}
+<a class="card" href="{{.URL}}" data-k="{{.Key}}"><span class="glyph {{.Color}}">{{.Letter}}</span><span class="body"><span class="title">{{.Title}}</span><span class="desc">{{.Description}}</span></span><span class="host">{{.Host}}</span>` + arrowIcon + `</a>{{end}}
 </div></section>{{end}}
-{{if not (or .Tools .Apps)}}<p class="empty">Nothing here for you yet.</p>{{end}}
+{{if .Total}}<div class="empty" id="none" hidden><span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span><h2>No matches</h2><p>Nothing matches “<span class="term" id="term"></span>”. Try another name.</p></div>
+{{else}}<div class="empty"><span class="glyph">` + `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/></svg>` + `</span><h2>No apps yet</h2><p>When someone shares an app with you, it will show up here.</p></div>{{end}}
 </main>
+<footer><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Protected by Cloudflare Access</footer>
 <script>` + launcherJS + `</script>
 </body>
 </html>

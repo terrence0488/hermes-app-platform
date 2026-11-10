@@ -88,10 +88,10 @@ func TestLauncherShowsEachPersonOnlyTheirTiles(t *testing.T) {
 					t.Errorf("unexpected tile %s", name)
 				}
 			}
-			if !strings.Contains(body, "Signed in as "+c.email) {
+			if !strings.Contains(body, `<span class="email" title="`+c.email+`">`+c.email+`</span>`) {
 				t.Error("signed-in email not shown")
 			}
-			if c.want == nil && !strings.Contains(body, "Nothing here for you yet") {
+			if c.want == nil && (!strings.Contains(body, "No apps yet") || strings.Contains(body, `id="q"`)) {
 				t.Error("empty message not shown")
 			}
 		})
@@ -273,18 +273,17 @@ func TestLauncherAppsFollowTheRegistry(t *testing.T) {
 	})
 }
 
-func TestLauncherSearchAppearsAboveNineTiles(t *testing.T) {
+func TestLauncherSearchAndPageChrome(t *testing.T) {
 	f := newLauncherFixture(t, testLauncher)
 	_, _, body := f.launcherPage(tokenFor(ownerEmail))
-	if strings.Contains(body, `id="q"`) {
-		t.Fatal("search shown with 4 tiles")
+	for _, want := range []string{`id="q"`, `id="none" hidden`, `href="/cdn-cgi/access/logout"`, "<title>Apps · " + testDomain + "</title>", `<span class="avatar" aria-hidden="true" title="` + ownerEmail + `">O</span>`, `<span class="host">vault.` + testDomain + `</span>`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
+		}
 	}
-	for _, name := range []string{"aa", "bb", "cc", "dd", "ee", "ff"} {
-		f.publish("app-"+name, f.nameApp(name))
-	}
-	_, _, body = f.launcherPage(tokenFor(ownerEmail))
-	if !strings.Contains(body, `id="q"`) {
-		t.Fatal("search missing with 10 tiles")
+	_, _, body = f.launcherPage(tokenFor("stranger@gmail.com"))
+	if strings.Contains(body, `id="q"`) || strings.Contains(body, `id="none"`) {
+		t.Error("search shown on an empty page")
 	}
 }
 
