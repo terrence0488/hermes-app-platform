@@ -276,7 +276,7 @@ func TestLauncherAppsFollowTheRegistry(t *testing.T) {
 func TestLauncherSearchAndPageChrome(t *testing.T) {
 	f := newLauncherFixture(t, testLauncher)
 	_, _, body := f.launcherPage(tokenFor(ownerEmail))
-	for _, want := range []string{`id="q"`, `id="none" hidden`, `href="/cdn-cgi/access/logout"`, "<title>Apps · " + testDomain + "</title>", `<span class="avatar" aria-hidden="true" title="` + ownerEmail + `">O</span>`, `<span class="host">vault.` + testDomain + `</span>`} {
+	for _, want := range []string{`id="q"`, `id="none" hidden`, `href="/cdn-cgi/access/logout"`, "<title>Apps · " + testDomain + "</title>", `<span class="avatar" aria-hidden="true" title="` + ownerEmail + `">O</span>`, `<span class="host">vault.` + testDomain + `</span>`, `<a class="card" href="https://vault.` + testDomain + `/" target="_blank" rel="noopener"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page lacks %q", want)
 		}
