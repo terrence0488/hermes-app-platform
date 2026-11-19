@@ -6,10 +6,10 @@
   },
   "tools": [
     {
-      "name": "vault",
-      "title": "Vault",
-      "description": "Logins for automated sites",
-      "icon": "vault",
+      "name": "settings",
+      "title": "Settings",
+      "description": "Credentials, people and access",
+      "icon": "settings",
       "visible_to": [
         "admins"
       ]

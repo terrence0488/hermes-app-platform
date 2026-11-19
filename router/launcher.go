@@ -352,6 +352,8 @@ var toolIcons = map[string]string{
 	"app":     `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/></svg>`,
 	"chart":   `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16h16"/><path d="M8 15l3.5-4 3 2.5L19 8"/></svg>`,
 	"chat":    `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a7.5 7.5 0 0 1-11 6.6L4 20l1.4-4.6A7.5 7.5 0 1 1 20 12z"/></svg>`,
+	// settings: an 8-tooth gear, for the admin settings page (hermes-settings).
+	"settings": `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.3 10.7L20.5 10.9L20.5 13.1L18.3 13.3L17.4 15.5L18.8 17.2L17.2 18.8L15.5 17.4L13.3 18.3L13.1 20.5L10.9 20.5L10.7 18.3L8.5 17.4L6.8 18.8L5.2 17.2L6.6 15.5L5.7 13.3L3.5 13.1L3.5 10.9L5.7 10.7L6.6 8.5L5.2 6.8L6.8 5.2L8.5 6.6L10.7 5.7L10.9 3.5L13.1 3.5L13.3 5.7L15.5 6.6L17.2 5.2L18.8 6.8L17.4 8.5z"/><circle cx="12" cy="12" r="2.8"/></svg>`,
 }
 
 const launcherCSS = `

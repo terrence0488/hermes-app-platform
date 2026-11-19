@@ -319,3 +319,13 @@ func TestLauncherConfigValidation(t *testing.T) {
 		t.Fatalf("good config refused: %v", err)
 	}
 }
+
+func TestLauncherSettingsGearIcon(t *testing.T) {
+	f := newLauncherFixture(t, `{"groups":{"admins":["owner@gmail.com"]},"tools":[
+		{"name":"settings","title":"Settings","description":"Credentials, people and access","icon":"settings","visible_to":["admins"]}]}`)
+	_, _, body := f.launcherPage(tokenFor(ownerEmail))
+	if !strings.Contains(body, "Settings") || !strings.Contains(body, toolIcons["settings"]) ||
+		!strings.Contains(body, "Credentials, people and access") {
+		t.Fatal("settings tile or its gear icon is missing")
+	}
+}
