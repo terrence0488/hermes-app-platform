@@ -342,6 +342,13 @@ To run the Go tests in a container, mount the whole repo, not only `router/`: th
 The Python suite needs only the standard library, and skips the real-Hermes file unless it is asked for. Don't run the real-Hermes file
 with your working directory inside `plugin/`.
 
+## Continuous integration and security scanning
+
+GitHub Actions runs the Python unit suite and Go race-enabled tests on pull requests and pushes to `main`. The Go job also runs
+`go vet` and builds the router without CGO. CodeQL scans the Go and Python code with the `security-extended` query set on pull
+requests, pushes to `main`, and weekly. The real-Hermes integration tests remain a separate deployment check because they need
+the Hermes runtime; the normal Python test command skips them.
+
 ## Licence
 
 MIT
